@@ -1,0 +1,603 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "usart-hmi-project-v2",
+  "title": "USART HMI structural project config",
+  "description": "Desired ordered pages, pictures and fonts of a project. Entries missing from a list are deleted, new entries are created, list order is the runtime id order. Written by `hmi_project.py export-config`, built with `hmi_project.py pack WORKSPACE OUT.HMI --config project.json`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "pages",
+    "pictures",
+    "fonts"
+  ],
+  "properties": {
+    "format": {
+      "const": "usart-hmi-project-v2"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "snapshot": {
+          "type": "string",
+          "description": "Fingerprint of the workspace files this config was exported from; a mismatch stops the build (refresh with `export-config --update-snapshot`)."
+        }
+      }
+    },
+    "id_policy": {
+      "enum": [
+        "preserve",
+        "remap"
+      ],
+      "default": "preserve",
+      "description": "preserve: surviving pages/pictures/fonts/components must keep their ids (append, or delete from the end). remap: ids are renumbered and every known reference is rewritten once."
+    },
+    "acknowledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dynamic": {
+          "type": "array",
+          "description": "Computed references (p[x.val], page v.val, .pic=v.val, ...) that could be invalidated by moved ids. Copy the entries from the error message after checking each site.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "site",
+              "sha256"
+            ],
+            "properties": {
+              "site": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "external_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Page keys (and \"<page key>/*\" for touch-event component ids) whose ids change although they are visible outside the project (UART frames such as `prints dp`). \"*\" accepts all. The external controller is never changed."
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 255,
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "pictures": {
+      "type": "array",
+      "maxItems": 65535,
+      "items": {
+        "$ref": "#/$defs/picture"
+      }
+    },
+    "fonts": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/font"
+      }
+    },
+    "portable": {
+      "const": true,
+      "description": "Source-only project written by `unpack --portable`: no original files; ids are positions in the lists (see hmi_portable.py). Then `project`, `layouts`, `animations`, `program` apply, entries have no `origin`, pictures use source.png, fonts source.zi or source.ttf."
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "type": "string",
+          "description": "96-byte project header, hex"
+        },
+        "index_order": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "i",
+              "zi",
+              "gmov",
+              "pa"
+            ]
+          }
+        }
+      }
+    },
+    "layouts": {
+      "type": "object",
+      "description": "Per component type: ordered [attribute, width] with width 1/2/4 (bytes), \"t\" (text) or \"h\" (hex).",
+      "additionalProperties": {
+        "type": "array"
+      }
+    },
+    "animations": {
+      "type": "array",
+      "description": "Portable projects. Frames are PNG files with a duration; the compiled .gmov and the source .gmovs are generated. gmov/gmovs (compiled files copied as they are) is the fallback for animations without a usable source.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/key"
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255,
+            "default": 10
+          },
+          "opaque": {
+            "type": "boolean",
+            "default": false,
+            "description": "Compile the frames without alpha streams (all pixels must be opaque)."
+          },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 255,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "png",
+                "ms"
+              ],
+              "properties": {
+                "png": {
+                  "type": "string"
+                },
+                "ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            }
+          },
+          "gmov": {
+            "type": "string"
+          },
+          "gmovs": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "program": {
+      "type": "string",
+      "description": "Workspace-relative startup script (Program.s); may use ${...} placeholders."
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+    },
+    "origin_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        }
+      },
+      "description": "The workspace file this entry was exported from; its stored bytes the JSON does not show are kept."
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "content"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "origin": {
+          "$ref": "#/$defs/origin_file"
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "raw"
+                }
+              },
+              "description": "The origin page unchanged (references are still remapped)."
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "path"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "json"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Workspace-relative file holding a page definition."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "name"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "inline"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "root": {
+                  "$ref": "#/$defs/root"
+                },
+                "objects": {
+                  "type": "array",
+                  "maxItems": 254,
+                  "items": {
+                    "$ref": "#/$defs/object"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "page_definition": {
+      "description": "The file a page `json` content points to (and what `inline` content contains).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,15}$",
+          "description": "At most 16 UTF-8 bytes; also the page object name."
+        },
+        "root": {
+          "$ref": "#/$defs/root"
+        },
+        "objects": {
+          "type": "array",
+          "maxItems": 254,
+          "items": {
+            "$ref": "#/$defs/object"
+          }
+        },
+        "header": {
+          "type": "object",
+          "properties": {
+            "lock": {
+              "type": "string"
+            },
+            "writer": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "root": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "$ref": "#/$defs/attributes"
+        },
+        "events": {
+          "$ref": "#/$defs/events"
+        },
+        "layout": {
+          "type": "array"
+        },
+        "extra": {
+          "type": "integer"
+        },
+        "tail": {
+          "type": "string"
+        }
+      },
+      "description": "The page object (type 121, id 0). Its type, id and name are managed."
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "type"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "index"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "description": "Inherit stored bytes from this component of the workspace (attribute widths, unknown records, table word, trailer). Using one origin twice copies the component."
+        },
+        "type": {
+          "description": "Type name or number. New components can be created for: page, button, text, picture, timer, variable.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "attributes": {
+          "$ref": "#/$defs/attributes"
+        },
+        "events": {
+          "$ref": "#/$defs/events"
+        },
+        "layout": {
+          "type": "array"
+        },
+        "extra": {
+          "type": "integer"
+        },
+        "tail": {
+          "type": "string"
+        }
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "description": "Attribute values. Components with an origin can only set attributes they already have; id and type are managed; endx/endy follow x/y/w/h when those change. Reference attributes (pic*, bpic, ppic, font, page swipe) are baseline ids for exported values; write new ones as {\"$ref\": \"picture:KEY\"}, {\"$ref\": \"font:KEY\"}, {\"$ref\": \"page:KEY\"} or {\"$id\": N, \"namespace\": \"baseline\"|\"final\"}.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hex"
+            ],
+            "properties": {
+              "hex": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "$ref"
+            ],
+            "properties": {
+              "$ref": {
+                "type": "string",
+                "pattern": "^(picture|font|page):.+"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "$id",
+              "namespace"
+            ],
+            "properties": {
+              "$id": {
+                "type": "integer"
+              },
+              "namespace": {
+                "enum": [
+                  "baseline",
+                  "final"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "events": {
+      "type": "object",
+      "description": "Event code by block name (codesup, codesdown, codesload, ...). Components with an origin keep the blocks they have; listed blocks are replaced. Lines identical to the origin are baseline lines (numbers remapped); new lines must use ${page:KEY}, ${picture:KEY}, ${font:KEY}, ${obj:PAGE/OBJECT}, ${pagename:KEY} or ${objname:PAGE/OBJECT} wherever ids move.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "hex"
+              ],
+              "properties": {
+                "hex": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "picture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "origin"
+          ]
+        },
+        {
+          "required": [
+            "source"
+          ]
+        }
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "origin": {
+          "$ref": "#/$defs/origin_file"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "png"
+          ],
+          "properties": {
+            "png": {
+              "type": "string",
+              "description": "Workspace-relative single 8-bit PNG (needs Pillow). With an origin it replaces that picture unless the file is identical to the PNG already stored in it (exported pictures use this)."
+            }
+          }
+        }
+      }
+    },
+    "font": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "origin"
+          ]
+        },
+        {
+          "required": [
+            "source"
+          ]
+        }
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "origin": {
+          "$ref": "#/$defs/origin_file"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "ttf": {
+              "type": "string",
+              "description": "Workspace-relative TTF/OTF/TTC (needs Pillow and fontTools)."
+            },
+            "height": {
+              "type": "integer"
+            },
+            "chars": {
+              "type": "string"
+            },
+            "chars_file": {
+              "type": "string"
+            },
+            "layout": {
+              "enum": [
+                "ascii",
+                "bmp"
+              ]
+            },
+            "bpp": {
+              "enum": [
+                1,
+                3
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "size": {
+              "type": "integer"
+            },
+            "font_index": {
+              "type": "integer"
+            },
+            "zi": {
+              "type": "string",
+              "description": "Portable projects: a compiled .zi font."
+            }
+          }
+        }
+      }
+    }
+  }
+}

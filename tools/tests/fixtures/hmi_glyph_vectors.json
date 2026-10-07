@@ -1,0 +1,47 @@
+{
+  "oracle": "USART HMI 1.68.1 AphDecCode; synthetic streams only",
+  "cases": [
+    {
+      "case": "levels3",
+      "input": "03c0c9d2dbe4edf6ff",
+      "pixels": 16,
+      "native_alpha": "0000242449496d6d9292b6b6dbdbffff"
+    },
+    {
+      "case": "levels3_single",
+      "input": "038081828384858687",
+      "pixels": 8,
+      "native_alpha": "0024496d92b6dbff"
+    },
+    {
+      "case": "binary",
+      "input": "010325c98262",
+      "pixels": 19,
+      "native_alpha": "000000ffffffffff00ff0000ffffff0000ffff"
+    },
+    {
+      "case": "binary_runs",
+      "input": "011f3f21011f3f22",
+      "pixels": 128,
+      "native_alpha": "00000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "case": "alpha_levels",
+      "input": "0389d3e5862189d3e5862189d3e5862183",
+      "pixels": 25,
+      "native_alpha": "0024496d92b6dbff0024496d92b6dbff0024496d92b6dbff6d"
+    },
+    {
+      "case": "alpha_runs",
+      "input": "031f013fd2d2d2d2820886",
+      "pixels": 81,
+      "native_alpha": "0000000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff4949494949494949490000000000000000db"
+    },
+    {
+      "case": "random",
+      "input": "0321ede3818aede6dc8d82218edbd421d6848c818a868ece81218561d6f5ced1cee98ee3e3cddced8e828bdd842182218521edee8621898ed3d2c98292d4dd8221e68bcee98321d6cc8394f3e2e98621898b838b8621ece641ebcbed8521818ee6cd218392f1dc85218321e2e2f4d3d98cf5d1ece4e3e1eaf1ecdad321d5828d858c812186218ed4f1cdc9cedbd3cae68c8e838b8edcf686",
+      "pixels": 257,
+      "native_alpha": "ffb6b6926d240049b6b692db6d9200b649ff00db6d6d4992ff49db920092240049db00db24db24ffb600ffff49dbdbb624db492424dbb62400db926d926d24b66d92b6b600db49006d6db692ff49ffb6ffb6b6b6dbdbff002400db496d494924244900004949926db649ff92db006d24dbb6246dff49db24926d000092db6d9249b624dbff0024006d6d006ddbffb69292db00ffb66d246db6b6b6ff2400db92db24b6ff6d000049db246d92b6ff6dff92499249db92496d6d240092dbb64924b6929292926d9224b649db24b6926d49496dff49b64900b6b6009224ffdbff00db4992db2424b6242424db6d6d496d244992db009200db6d006d00db6d92dbdbdb"
+    }
+  ]
+}

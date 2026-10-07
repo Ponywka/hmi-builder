@@ -1,0 +1,46 @@
+name: Build USART HMI project
+description: Validates a portable display project (project.json + pages/ pictures/ fonts/ animations/) and packs it into a .HMI file.
+
+inputs:
+  project-dir:
+    description: Directory with the portable project (contains project.json), relative to the workspace
+    required: true
+  output:
+    description: Path of the .HMI file to write
+    default: out/display.HMI
+  artifact-name:
+    description: Name of the uploaded artifact (empty = do not upload)
+    default: display-hmi
+
+outputs:
+  hmi:
+    description: Path of the built .HMI
+    value: ${{ inputs.output }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - shell: bash
+      run: python -m pip install Pillow fonttools
+    - shell: bash
+      env:
+        PROJECT: ${{ inputs.project-dir }}
+        OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+        tools="${{ github.action_path }}/tools"
+        mkdir -p "$(dirname "$OUTPUT")"
+        python "$tools/hmi_project.py" validate "$PROJECT" --config project.json
+        python "$tools/hmi_project.py" pack "$PROJECT" "$OUTPUT" --config project.json
+        python "$tools/hmi_parse.py" "$OUTPUT" --check
+        sha256sum "$OUTPUT" | tee "$OUTPUT.sha256"
+    - if: ${{ inputs.artifact-name != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ inputs.output }}
+          ${{ inputs.output }}.sha256
