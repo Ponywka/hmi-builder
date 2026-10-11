@@ -13,6 +13,7 @@ except ImportError:            # pragma: no cover - the emulator needs Pillow on
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import hmi_font  # noqa: E402
+from hmi_emu import colpic  # noqa: E402
 
 
 def rgb565(v):
@@ -187,8 +188,26 @@ class Renderer:
                     pass
             self._fill(img, a, 0x2104)
         elif t == "col_pic":
+            if self._col_pic(img, a, device.written.get((device.page, o.name))):
+                return
             self._fill(img, a, 0x2104)
             ImageDraw.Draw(img).rectangle((a["x"], a["y"], a["x"] + a["w"] - 1, a["y"] + a["h"] - 1), outline=(90, 90, 90, 255))
+
+    def _col_pic(self, img, a, data):
+        """Draws the thumbnail that the host wrote into a col_pic component; False when there is none to show."""
+        if not data:
+            return False
+        try:
+            width, height, pixels = colpic.decode(data)
+        except ValueError:
+            return False
+        rgb = bytearray()
+        for v in pixels:
+            rgb += bytes(rgb565(v))
+        pic = Image.frombytes("RGB", (width, height), bytes(rgb)).convert("RGBA")
+        self._fill(img, a, 0)
+        self._blit(img, pic.crop((0, 0, min(width, a["w"]), min(height, a["h"]))), a["x"], a["y"])
+        return True
 
     def paste_at(self, img, pic, a):
         if pic is not None:

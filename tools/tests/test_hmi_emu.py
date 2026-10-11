@@ -6,6 +6,7 @@ import json
 import os
 import select
 import socket
+import struct
 import sys
 import tempfile
 import time
@@ -14,7 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import hmi_font  # noqa: E402
-from hmi_emu import lang  # noqa: E402
+from hmi_emu import colpic, lang  # noqa: E402
 from hmi_emu.app import Emulator  # noqa: E402
 from hmi_emu.bridge import PtyLink, SocketLink  # noqa: E402
 from hmi_emu.device import Device, END  # noqa: E402
@@ -411,6 +412,63 @@ class RenderTests(DeviceCase):
         self.assertEqual(r.render(self.dev).getpixel((19, 19)), tuple(v // 2 for v in rgb565(63488)))
         self.send("sleep=1")
         self.assertEqual(r.render(self.dev).getpixel((19, 19)), (0, 0, 0))
+
+
+def colpic_text(width, height, palette, indexes):
+    """ColPic text for a picture given as palette indexes (every pixel its own run of 1, banks of 32 colours)."""
+    runs, bank = bytearray(), 0
+    for i in indexes:
+        if i // 32 != bank:
+            bank = i // 32
+            runs.append(0xE0 + bank)
+        runs.append(0x20 + i % 32)
+    raw = bytearray(32)
+    raw[0] = 3
+    struct.pack_into("<II", raw, 4, width, height)
+    struct.pack_into("<III", raw, 12, 0x05DDC33C, len(palette) * 2, len(runs))
+    raw += struct.pack("<%dH" % len(palette), *palette) + runs
+    raw += b"\0" * (-len(raw) % 3)
+    out = bytearray()
+    for i in range(0, len(raw), 3):
+        b0, b1, b2 = raw[i:i + 3]
+        for v in (b0 >> 2, ((b0 & 3) << 4) | (b1 >> 4), ((b1 & 15) << 2) | (b2 >> 6), b2 & 63):
+            c = v + 48
+            out.append(0x7E if c == 0x5C else c)
+    return bytes(out)
+
+
+class ColPicTests(DeviceCase):
+    def setUp(self):
+        super().setUp()
+        path = os.path.join(self._tmp.name, "pages", "home.json")
+        with open(path, encoding="utf-8") as f:
+            home = json.load(f)
+        home["objects"].append({"key": "cp0", "type": "col_pic", "events": {}, "attributes": {
+            "objname": "cp0", "vscope": 0, "x": 0, "y": 10, "w": 8, "h": 5, "buffsize": 1000}})
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(home, f)
+        self.project = Project(self._tmp.name)
+        self.dev = Device(self.project, self.out.extend, clock=self.clock, boot_frame=False)
+        self.palette = [(i * 1237) & 0xFFFF for i in range(40)]
+
+    def test_decode_round_trip(self):
+        text = colpic_text(8, 5, self.palette, list(range(40)))
+        w, h, pixels = colpic.decode(text)
+        self.assertEqual((w, h), (8, 5))
+        self.assertEqual(pixels, self.palette)                    # includes colours of the second bank
+        with self.assertRaises(ValueError):
+            colpic.decode(b"hello world, this is no picture at all....")
+
+    def test_written_thumbnail_is_drawn_and_closed(self):
+        r = Renderer(self.project)
+        self.assertEqual(r.render(self.dev).getpixel((3, 12)), rgb565(0x2104))     # nothing written: grey placeholder
+        text = colpic_text(8, 5, self.palette, list(range(40)))
+        self.send('cp0.write("%s")' % text.decode("latin-1"))
+        img = r.render(self.dev)
+        self.assertEqual(img.getpixel((0, 10)), rgb565(self.palette[0]))
+        self.assertEqual(img.getpixel((7, 14)), rgb565(self.palette[39]))
+        self.send("cp0.close()")
+        self.assertEqual(r.render(self.dev).getpixel((3, 12)), rgb565(0x2104))
 
 
 class LinkTests(unittest.TestCase):

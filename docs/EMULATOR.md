@@ -67,7 +67,8 @@ The emulator speaks the protocol of the display: instructions end with `ff ff ff
 * It is an interpretation of the documented behaviour, not the firmware: details such as drawing order of overlapping
   alpha pictures, text clipping and rounding may differ. Verify a final change on the display.
 * No timing: the emulator is not slowed down to the baud rate and instructions run instantly. `delay` really sleeps.
-* Not drawn: `col_pic` (thumbnail data is kept but shown as a grey box), gauges, waveforms, video/audio, QR codes.
+* `col_pic` draws the ColPic thumbnail written with `cpN.write("...")` (cleared by `close()`; grey box while empty).
+* Not drawn: gauges, waveforms, video/audio, QR codes.
 * Not implemented: RTC, GPIO, serial pass-through, `play`/`stop` (accepted, no effect), the `sendkey`/send-component-id
   tick boxes (the project uses explicit `prints`), touch calibration, the text EEPROM instructions beyond storing the given value (`rept`/`wept`).
 * Unknown instructions are answered with `00` and logged; unknown names with `1a`.

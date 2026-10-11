@@ -102,7 +102,7 @@ class Device:
             self.source_id = 0
             self.error_count = 0
             self.last_error = None
-            self.written = {}               # col_pic / cp data per component name
+            self.written = {}               # col_pic data per (page index, component name)
             self._bump()
             if self.boot_frame:
                 self._out(b"\x00\x00\x00" + END)
@@ -474,10 +474,10 @@ class Device:
             obj = self._obj_arg(args[0])
             method = args[1].value
             if method == "close":
-                self.written.pop(obj.name, None)
+                self.written.pop((self.page, obj.name), None)
             elif method == "write":
                 v = self.value(args[2]) if len(args) > 2 else ""
-                self.written[obj.name] = v.encode("utf-8") if isinstance(v, str) else bytes([int(v) & 255])
+                self.written[(self.page, obj.name)] = v.encode("utf-8") if isinstance(v, str) else bytes([int(v) & 255])
             else:
                 raise HmiError("unknown method %s" % method, 0x00)
             self._bump()
@@ -523,7 +523,7 @@ class Device:
                     "addt", "cle", "play", "stop", "sendxy"):
             if name == "cle" and args:
                 obj = self._obj_arg(args[0])
-                self.written.pop(obj.name, None) if obj is not None else None
+                self.written.pop((self.page, obj.name), None) if obj is not None else None
             self._bump()
             return
         if name == "prints":
@@ -679,11 +679,12 @@ class Device:
                 return
             m = re.match(r"^([A-Za-z_][\w]*)\.write\(\"(.*)\"\)$", text, re.S)
             if m:
-                self.written[m.group(1)] = raw[raw.index(b'.write("') + 8:-2]
+                self.written[(self.page, m.group(1))] = raw[raw.index(b'.write("') + 8:-2]
                 self._bump()
                 return
             m = re.match(r"^([A-Za-z_][\w]*)\.close\(\)$", text)
             if m:
+                self.written.pop((self.page, m.group(1)), None)
                 self._bump()
                 return
             if self.page is None:
