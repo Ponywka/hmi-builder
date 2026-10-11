@@ -339,6 +339,9 @@ class Renderer:
         ycen = a.get("ycen", 0)
         y0 = a["y"] + (0 if ycen == 0 else (a["h"] - total_h) // 2 if ycen == 1 else a["h"] - total_h)
         rgb = rgb565(color)
+        # the text is clipped to the box of the component: glyphs go to a layer of the size of the box
+        target, img = img, Image.new("RGBA", (max(1, int(a["w"])), max(1, int(a["h"]))), (0, 0, 0, 0))
+        ox, oy = int(a["x"]), int(a["y"])
         for n, line in enumerate(lines):
             width = sum((self._advance(font_id, c) or 0) + spax for c in line) - (spax if line else 0)
             xcen = a.get("xcen", 0)
@@ -350,10 +353,11 @@ class Renderer:
                     x += 4 + spax
                     continue
                 mask, g = m
-                gx, gy = x - g["left"], y
+                gx, gy = x - g["left"] - ox, y - oy
                 if mask.width and mask.height:
                     img.paste(Image.new("RGBA", mask.size, rgb + (255,)), (gx, gy), mask)
                 x += g["width"] + spax
+        target.paste(img, (ox, oy), img)
 
     # -- drawing instructions (cls, fill, line...) -----------------------------------------------------------------
 

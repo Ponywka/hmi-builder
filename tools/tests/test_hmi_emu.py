@@ -397,6 +397,16 @@ class RenderTests(DeviceCase):
         blank = r.render(self.dev)
         self.assertNotIn(rgb565(65535), [blank.getpixel((x, y)) for x in range(0, 40) for y in range(30, 38)])
 
+    def test_text_is_clipped_to_its_box(self):
+        r = Renderer(self.project)
+        self.send("t0.w=10")
+        self.send('t0.txt="xyxyxyxy"')
+        img = r.render(self.dev)
+        inside = [img.getpixel((x, y)) for x in range(0, 10) for y in range(30, 38)]
+        outside = [img.getpixel((x, y)) for x in range(10, 40) for y in range(30, 38)]
+        self.assertIn(rgb565(65535), inside)
+        self.assertNotIn(rgb565(65535), outside)                                     # the rest of the text is cut off
+
     def test_page_picture_and_slider_fill(self):
         r = Renderer(self.project)
         self.dev.touch(20, 55, "down")
