@@ -171,6 +171,8 @@ class Renderer:
                 self._text(img, a, text, a.get("pco2" if pressed else "pco", a.get("pco", 0)))
         elif t == "crop_picture":
             self._crop(img, a.get("picc"), a)
+        elif t == "picture":
+            self.paste_at(img, self.picture(a.get("pic")), a)
         elif t == "progress_bar":
             self._progress(img, a)
         elif t == "slider":

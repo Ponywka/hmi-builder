@@ -522,6 +522,30 @@ class ExternalPictureTests(DeviceCase):
         self.assertEqual(Renderer(self.project).render(self.dev).getpixel((3, 12))[:3], (255, 0, 0))
 
 
+class PictureTests(DeviceCase):
+    def setUp(self):
+        super().setUp()
+        path = os.path.join(self._tmp.name, "pages", "home.json")
+        with open(path, encoding="utf-8") as f:
+            home = json.load(f)
+        home["objects"].append({"key": "pc0", "type": "picture", "events": {}, "attributes": {
+            "objname": "pc0", "vscope": 0, "x": 10, "y": 40, "w": 20, "h": 20, "pic": {"$ref": "picture:red"}}})
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(home, f)
+        self.project = Project(self._tmp.name)
+        self.dev = Device(self.project, self.out.extend, clock=self.clock, boot_frame=False)
+
+    def test_picture_is_drawn_where_the_widget_is(self):
+        img = Renderer(self.project).render(self.dev)
+        self.assertEqual(img.getpixel((10, 40))[:3], (255, 0, 0))
+        self.assertEqual(img.getpixel((29, 59))[:3], (255, 0, 0))
+        self.assertNotEqual(img.getpixel((9, 40))[:3], (255, 0, 0))
+
+    def test_picture_can_be_hidden(self):
+        self.send("vis pc0,0")
+        self.assertNotEqual(Renderer(self.project).render(self.dev).getpixel((20, 50))[:3], (255, 0, 0))
+
+
 class LinkTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
