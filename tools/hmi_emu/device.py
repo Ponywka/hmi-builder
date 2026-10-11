@@ -264,6 +264,8 @@ class Device:
     def fire(self, robj, event):
         lines = robj.defn.events.get(event)
         if not lines:
+            if event == "codesup":
+                self._pop_keyboard(robj)
             return
         key = (robj.defn.page, robj.defn.id, event)
         saved = self.exec_page
@@ -283,6 +285,38 @@ class Device:
             self.exec_page = saved
             self.source_id = saved_source
         self._bump()
+        if event == "codesup":
+            self._pop_keyboard(robj)
+
+    def _pop_keyboard(self, robj):
+        """A number / text component with the ``key`` attribute set (not 255) pops up the keyboard page when it is
+        released, also when its ``codesup`` is run by ``click obj,0``. The page that was shown and the component are
+        left in ``loadpageid`` / ``loadcmpid``, the keyboard page returns to them. ``key`` 0 / 1 / 2 is the page
+        keybdA / keybdB / keybdC; a project with a single keyboard page uses it for every value."""
+        key = robj.attrs.get("key", 255)
+        if robj.type not in ("number", "xfloat", "text") or key not in (0, 1, 2):
+            return
+        keys = [k for k in self.project.page_keys if k.startswith("keybd")]
+        name = "keybd" + "ABC"[key]
+        if name not in keys:
+            if len(keys) != 1:
+                return
+            name = keys[0]
+        saved_source = self.source_id
+        self.source_id = robj.defn.id
+        index, shown = self.project.page_keys.index(name), self.page
+        try:
+            self._switch(index)
+        except _PageChanged:
+            pass
+        finally:
+            self.source_id = saved_source
+        # the keyboard page keeps what it has to return to in two variable components of its own
+        # (the firmware fills them in; the system variables of the same names are shadowed by them)
+        state = self.states.get(index, {})
+        for comp, value in (("loadpageid", shown), ("loadcmpid", robj.defn.id)):
+            if comp in state:
+                state[comp].attrs["val"] = value
 
     def value(self, node):
         return lang.evaluate(node, self)
@@ -695,7 +729,8 @@ class Device:
             if not (a["x"] <= x < a["x"] + a["w"] and a["y"] <= y < a["y"] + a["h"]):
                 continue
             ev = o.defn.events
-            if not (ev.get("codesdown") or ev.get("codesup") or ev.get("codesslide") or o.type == "slider"):
+            keyboard = o.type in ("number", "xfloat", "text") and a.get("key", 255) in (0, 1, 2)
+            if not (ev.get("codesdown") or ev.get("codesup") or ev.get("codesslide") or o.type == "slider" or keyboard):
                 continue
             best = o
         return best

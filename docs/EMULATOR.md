@@ -50,8 +50,12 @@ The emulator speaks the protocol of the display: instructions end with `ff ff ff
   strlen substr spstr rest delay ref cls pic picq xstr fill line draw cir cirs`, `obj.write()` / `obj.close()`.
 * **Events**: `codesload`, `codesloadend`, `codesunload`, `codesdown`, `codesup`, `codesslide`, `codestimer` (timers of
   the current page; minimum period 50 ms), `touch_capture` (fires on every touch). A touch goes to the top-most visible,
-  touch-enabled component that has event code (or is a slider); otherwise to the page object. A page change inside an
+  touch-enabled component that has event code (or is a slider, or a number / text with a keyboard); otherwise to the page object. A page change inside an
   event ends that event.
+* **Keyboard**: a number / text component with the `key` attribute (not 255) pops up the keyboard page (`keybdA` / `keybdB` /
+  `keybdC` for 0 / 1 / 2, or the only `keybd*` page of the project) when it is released, also when its `codesup` runs through
+  `click obj,0`; the page that was shown and the component id are put into the keyboard page's `loadpageid` / `loadcmpid`
+  components, as the firmware does.
 * **Page state**: components of a page start from their stored values every time the page is loaded; components with
   `vscope=1` keep their values.
 * **Drawing**: page background (solid / picture), button, text, number (crop image, solid colour, image, border),

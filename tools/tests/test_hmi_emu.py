@@ -274,6 +274,107 @@ class DeviceTests(DeviceCase):
         self.assertEqual(self.take(), b"\x05" + END)
 
 
+def make_keyboard_project(directory, keyboards=("keybdB",)):
+    """``home`` with numbers that have a keyboard (``key`` attribute) and one that has not, a button that clicks the
+    first number, and the keyboard pages named in ``keyboards`` (each with the two variables the firmware fills)."""
+    os.makedirs(os.path.join(directory, "pages"))
+    def number(name, row, kb, events=None):
+        return {"key": name, "type": "number", "events": events or {}, "attributes": {
+            "objname": name, "vscope": 0, "x": 0, "y": row * 10, "w": 20, "h": 10, "key": kb, "val": 0, "sta": 3}}
+    home = {"name": "home", "root": {"attributes": {"x": 0, "y": 0, "w": 40, "h": 60, "sta": 1, "bco": 0}, "events": {}},
+            "objects": [
+                number("n_kb", 0, 2, {"codesup": ["touched=1"]}),       # id 1: keyboard 2, has event code
+                number("n_plain", 1, 255),                               # id 2: no keyboard
+                number("n_noevent", 2, 2),                               # id 3: keyboard 2 and no event code at all
+                number("n_a", 3, 0), number("n_b", 4, 1),                # ids 4, 5: keyboard A / B
+                obj("clicker", "button", x=20, y=0, w=20, h=10, sta=1, bco=0, txt="", val=0,
+                    _events={"codesup": ["click n_kb,0"]}),              # id 6
+            ]}
+    config_pages = [{"key": "home", "content": {"mode": "json", "path": "pages/home.json"}}]
+    pages = {"home": home}
+    for name in keyboards:
+        pages[name] = {"name": name, "root": {"attributes": {"x": 0, "y": 0, "w": 40, "h": 60, "sta": 1, "bco": 0},
+                                              "events": {}},
+                       "objects": [obj("loadpageid", "variable", vscope=1, val=0, txt="", txt_maxl=10),
+                                   obj("loadcmpid", "variable", vscope=1, val=0, txt="", txt_maxl=10),
+                                   obj("back", "button", x=0, y=0, w=40, h=10, sta=1, bco=0, txt="", val=0,
+                                       _events={"codesup": ["page loadpageid.val"]})]}
+        config_pages.append({"key": name, "content": {"mode": "json", "path": "pages/%s.json" % name}})
+    for name, data in pages.items():
+        with open(os.path.join(directory, "pages", name + ".json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    with open(os.path.join(directory, "project.json"), "w") as f:
+        json.dump({"format": "usart-hmi-project-v2", "portable": True, "pages": config_pages, "pictures": [],
+                   "fonts": [], "animations": [], "program": "Program.s"}, f)
+    with open(os.path.join(directory, "Program.s"), "w") as f:
+        f.write("int touched=0\npage ${page:home}\n")
+
+
+class KeyboardTests(unittest.TestCase):
+    """A number / text with the ``key`` attribute pops up the keyboard page when released."""
+
+    def device(self, keyboards=("keybdB",)):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        make_keyboard_project(tmp.name, keyboards)
+        self.project = Project(tmp.name)
+        return Device(self.project, bytearray().extend, clock=Clock(), boot_frame=False)
+
+    def tap(self, dev, name):
+        x, y = dev.center(name)
+        dev.touch(x, y, "down")
+        dev.touch(x, y, "up")
+
+    def page_key(self, dev):
+        return self.project.page_keys[dev.page]
+
+    def test_release_opens_the_keyboard_and_it_returns(self):
+        dev = self.device()
+        self.tap(dev, "n_kb")
+        self.assertEqual(dev.globals["touched"], 1)                  # its own code ran first
+        self.assertEqual(self.page_key(dev), "keybdB")
+        self.assertEqual(dev.attr("loadpageid", "val"), 0)           # the page to return to
+        self.assertEqual(dev.attr("loadcmpid", "val"), 1)            # the component that asked
+        self.tap(dev, "back")
+        self.assertEqual(self.page_key(dev), "home")
+
+    def test_press_alone_and_key_255_do_nothing(self):
+        dev = self.device()
+        x, y = dev.center("n_kb")
+        dev.touch(x, y, "down")
+        self.assertEqual(self.page_key(dev), "home")
+        self.tap(dev, "n_plain")
+        self.assertEqual(self.page_key(dev), "home")
+
+    def test_component_without_event_code_also_pops_up(self):
+        dev = self.device()
+        self.tap(dev, "n_noevent")
+        self.assertEqual(self.page_key(dev), "keybdB")
+        self.assertEqual(dev.attr("loadcmpid", "val"), 3)
+
+    def test_click_instruction_pops_up_too(self):
+        dev = self.device()
+        self.tap(dev, "clicker")                                      # its code is "click n_kb,0"
+        self.assertEqual(self.page_key(dev), "keybdB")
+        self.assertEqual(dev.attr("loadcmpid", "val"), 1)
+
+    def test_key_selects_keybdA_keybdB_when_both_exist(self):
+        dev = self.device(("keybdA", "keybdB"))
+        self.tap(dev, "n_a")
+        self.assertEqual(self.page_key(dev), "keybdA")
+        self.tap(dev, "back")
+        self.tap(dev, "n_b")
+        self.assertEqual(self.page_key(dev), "keybdB")
+        self.tap(dev, "back")
+        self.tap(dev, "n_kb")                                         # key 2 and no keybdC: ambiguous, no pop-up
+        self.assertEqual(self.page_key(dev), "home")
+
+    def test_no_keyboard_page_in_the_project(self):
+        dev = self.device(())
+        self.tap(dev, "n_kb")
+        self.assertEqual(self.page_key(dev), "home")
+
+
 class RenderTests(DeviceCase):
     def test_button_text_and_pressed_colour(self):
         r = Renderer(self.project)
