@@ -42,6 +42,7 @@ class PtyLink(Link):
         self.path = os.ttyname(self.slave)
         self.name = "pty " + self.path
         self._out = queue.Queue()
+        self._in = queue.Queue()
         self._running = False
         self._made_link = False
         if link_path:
@@ -58,6 +59,7 @@ class PtyLink(Link):
     def start(self):
         self._running = True
         threading.Thread(target=self._read_loop, daemon=True, name="pty-rx").start()
+        threading.Thread(target=self._feed_loop, daemon=True, name="pty-feed").start()
         threading.Thread(target=self._write_loop, daemon=True, name="pty-tx").start()
 
     def _read_loop(self):
@@ -72,7 +74,17 @@ class PtyLink(Link):
             except OSError:
                 break
             if data:
-                self.device.feed(data)
+                self._in.put(data)
+
+    def _feed_loop(self):
+        """The device works (and renders) under its lock; reading apart from it keeps the pty drained, because a
+        program that writes with O_NDELAY (xindi does) loses the bytes the full pty does not take."""
+        while self._running:
+            try:
+                data = self._in.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            self.device.feed(data)
 
     def _write_loop(self):
         while self._running:
