@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import select
@@ -493,6 +494,32 @@ class ColPicTests(DeviceCase):
         self.send("home.cp0.close()")
         self.send("page home")
         self.assertEqual(r.render(self.dev).getpixel((3, 12)), rgb565(0x2104))
+
+
+class ExternalPictureTests(DeviceCase):
+    def setUp(self):
+        super().setUp()
+        path = os.path.join(self._tmp.name, "pages", "home.json")
+        with open(path, encoding="utf-8") as f:
+            home = json.load(f)
+        home["objects"].append({"key": "ep0", "type": "external_picture", "events": {}, "attributes": {
+            "objname": "ep0", "vscope": 0, "x": 0, "y": 10, "w": 8, "h": 5, "path": "ram/a.jpg"}})
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(home, f)
+        self.project = Project(self._tmp.name)
+        self.dev = Device(self.project, self.out.extend, clock=self.clock, boot_frame=False)
+
+    def test_missing_file_draws_nothing(self):
+        r = Renderer(self.project)
+        before = r.render(self.dev).getpixel((3, 12))
+        self.dev.files["ram/a.jpg"] = b"not a picture"
+        self.assertEqual(r.render(self.dev).getpixel((3, 12)), before)     # what is under the component stays
+
+    def test_written_file_is_drawn(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (4, 4), (255, 0, 0)).save(buf, "PNG")
+        self.dev.files["ram/a.jpg"] = buf.getvalue()
+        self.assertEqual(Renderer(self.project).render(self.dev).getpixel((3, 12))[:3], (255, 0, 0))
 
 
 class LinkTests(unittest.TestCase):

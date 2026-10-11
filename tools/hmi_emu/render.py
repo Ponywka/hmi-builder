@@ -186,7 +186,7 @@ class Renderer:
                     return
                 except OSError:
                     pass
-            self._fill(img, a, 0x2104)
+            # no (readable) file in the display's RAM: the component draws nothing, what is under it stays
         elif t == "col_pic":
             if self._col_pic(img, a, device.written.get((device.page, o.name))):
                 return
