@@ -6,6 +6,7 @@ contains no display project.
 
 - `tools/` — parser, builder, encoders, tests (`python -m unittest discover -s tools/tests`).
 - `docs/PORTABLE_FORMAT.md` — project format description (also written for an LLM).
+- `tools/hmi_emulator.py` — emulator of the display: runs a project directory, UART over a pty/TCP, browser UI (`docs/EMULATOR.md`).
 - `action.yml` — GitHub Action that builds a project from another repository.
 
 ## Use from a project repository
