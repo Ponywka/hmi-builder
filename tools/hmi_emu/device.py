@@ -438,6 +438,20 @@ class Device:
 
     # -- commands --------------------------------------------------------------------------------------------------
 
+    def _cp_key(self, name):
+        """(page index, component name) of a col_pic given as ``name`` or ``page.name``."""
+        if "." in name:
+            page, name = name.split(".", 1)
+            for p in self.project.pages:
+                if p.name == page:
+                    return (p.index, name)
+        return (self.page, name)
+
+    def _cp_write(self, name, data):
+        """write() appends to the buffer of the component; close() empties it."""
+        key = self._cp_key(name)
+        self.written[key] = self.written.get(key, b"") + data
+
     def _obj_arg(self, node):
         """A component named or numbered by an instruction argument."""
         cur = self.exec_page if self.exec_page is not None else self.page
@@ -474,10 +488,10 @@ class Device:
             obj = self._obj_arg(args[0])
             method = args[1].value
             if method == "close":
-                self.written.pop((self.page, obj.name), None)
+                self.written.pop(self._cp_key(obj.name), None)
             elif method == "write":
                 v = self.value(args[2]) if len(args) > 2 else ""
-                self.written[(self.page, obj.name)] = v.encode("utf-8") if isinstance(v, str) else bytes([int(v) & 255])
+                self._cp_write(obj.name, v.encode("utf-8") if isinstance(v, str) else bytes([int(v) & 255]))
             else:
                 raise HmiError("unknown method %s" % method, 0x00)
             self._bump()
@@ -523,7 +537,7 @@ class Device:
                     "addt", "cle", "play", "stop", "sendxy"):
             if name == "cle" and args:
                 obj = self._obj_arg(args[0])
-                self.written.pop((self.page, obj.name), None) if obj is not None else None
+                self.written.pop(self._cp_key(obj.name), None) if obj is not None else None
             self._bump()
             return
         if name == "prints":
@@ -677,14 +691,14 @@ class Device:
                 self.files.pop(text[8:].strip().strip('"'), None)
                 self._reply_ok()
                 return
-            m = re.match(r"^([A-Za-z_][\w]*)\.write\(\"(.*)\"\)$", text, re.S)
+            m = re.match(r"^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\.write\(\"(.*)\"\)$", text, re.S)
             if m:
-                self.written[(self.page, m.group(1))] = raw[raw.index(b'.write("') + 8:-2]
+                self._cp_write(m.group(1), raw[raw.index(b'.write("') + 8:-2])
                 self._bump()
                 return
-            m = re.match(r"^([A-Za-z_][\w]*)\.close\(\)$", text)
+            m = re.match(r"^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\.close\(\)$", text)
             if m:
-                self.written.pop((self.page, m.group(1)), None)
+                self.written.pop(self._cp_key(m.group(1)), None)
                 self._bump()
                 return
             if self.page is None:

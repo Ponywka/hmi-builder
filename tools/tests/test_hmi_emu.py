@@ -470,6 +470,20 @@ class ColPicTests(DeviceCase):
         self.send("cp0.close()")
         self.assertEqual(r.render(self.dev).getpixel((3, 12)), rgb565(0x2104))
 
+    def test_chunks_append_and_page_qualified_name(self):
+        """The port sends 2048-byte pieces, each as cp.write("<piece>"), and names the widget page.name."""
+        r = Renderer(self.project)
+        text = colpic_text(8, 5, self.palette, list(range(40))).decode("latin-1")
+        self.send("page other")                                  # the widget is on home, the host writes from elsewhere
+        for piece in (text[:20], text[20:]):
+            self.send('home.cp0.write("%s")' % piece)
+        self.send("page home")
+        self.assertEqual(r.render(self.dev).getpixel((7, 14)), rgb565(self.palette[39]))
+        self.send("page other")
+        self.send("home.cp0.close()")
+        self.send("page home")
+        self.assertEqual(r.render(self.dev).getpixel((3, 12)), rgb565(0x2104))
+
 
 class LinkTests(unittest.TestCase):
     def setUp(self):
