@@ -995,6 +995,119 @@ def _read_chars_file(path: str) -> list[int]:
     return parse_chars(text.replace("\r", "").replace("\n", ""))
 
 
+def decode_glyph(stream: bytes, width: int, height: int) -> tuple[list[list[int]], int]:
+    """Decode one ``type-byte + token stream`` into visual rows of 0..255 alpha.
+
+    ``width`` is the complete bitmap width (advance + left + right).  Returns
+    ``(rows, bpp)``.  Inverse of :func:`encode_glyph`.
+    """
+    levels = _strict_decode_stream(stream, width * height)
+    bpp = bytes(stream)[0]
+    scale = (lambda v: round(v * 255 / 7)) if bpp == 3 else (lambda v: 255 if v else 0)
+    rows = [[scale(levels[(width - 1 - x) * height + y]) for x in range(width)] for y in range(height)]
+    return rows, bpp
+
+
+def decode_font(data) -> dict:
+    """Decode a ``.zi`` into ``{name, height, layout, bpp, glyphs}``.
+
+    ``glyphs`` maps code points to ``{'width', 'left', 'right', 'alpha'}`` with
+    visual row-major alpha rows, i.e. the input accepted by :func:`encode_font`.
+    The font is validated first.
+    """
+    data = bytes(data)
+    header = validate_font(data)
+    glyphs = {}
+    bpps = set()
+    for code in _present_codes(data, header):
+        info = _entry_info(data, header, code)
+        total = info["width"] + info["left"] + info["right"]
+        stream = data[info["address"]:info["address"] + info["size"]]
+        rows, bpp = decode_glyph(stream, total, header["h"])
+        bpps.add(bpp)
+        glyphs[code] = {"width": info["width"], "left": info["left"], "right": info["right"], "alpha": rows}
+    return {
+        "name": header["name"], "height": header["h"],
+        "layout": "ascii" if header["state"] == 0 else "bmp",
+        "bpp": 3 if 3 in bpps or not bpps else 1, "glyphs": glyphs,
+    }
+
+
+class FontReader:
+    """Lazy reader of a ``.zi``: glyphs are decoded on first use (no full validation).
+
+    ``glyph(code)`` returns ``{'width', 'left', 'right', 'alpha'}`` (visual rows of 0..255) or None when the font has no
+    such character.  Meant for renderers (the HMI emulator); use :func:`decode_font` to read the whole font.
+    """
+
+    def __init__(self, data):
+        self.data = bytes(data)
+        self.header = _header_from_bytes(self.data)
+        if self.header["state"] not in (0, 1) or self.header["h"] == 0:
+            raise ValueError("unsupported .zi header")
+        self.height = self.header["h"]
+        self._cache = {}
+
+    def glyph(self, code):
+        if code in self._cache:
+            return self._cache[code]
+        info = _entry_info(self.data, self.header, code)
+        g = None
+        if info is not None:
+            total = info["width"] + info["left"] + info["right"]
+            stream = self.data[info["address"]:info["address"] + info["size"]]
+            try:
+                rows, _ = decode_glyph(stream, total, self.height)
+                g = {"width": info["width"], "left": info["left"], "right": info["right"], "alpha": rows}
+            except ValueError:
+                g = None
+        self._cache[code] = g
+        return g
+
+
+def export_font(data, directory) -> int:
+    """Write ``font.json`` and one ``U+XXXX.png`` per glyph; needs Pillow."""
+    import json
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError("Pillow is required to write glyph PNGs") from exc
+    font = decode_font(data)
+    out = Path(directory)
+    (out / "glyphs").mkdir(parents=True, exist_ok=True)
+    meta = {k: font[k] for k in ("name", "height", "layout", "bpp")}
+    meta["glyphs"] = {}
+    for code, g in sorted(font["glyphs"].items()):
+        name = "U+%04X.png" % code
+        w = g["width"] + g["left"] + g["right"]
+        img = Image.frombytes("L", (w, font["height"]), bytes(v for row in g["alpha"] for v in row))
+        img.save(out / "glyphs" / name)
+        meta["glyphs"]["%04X" % code] = {"width": g["width"], "left": g["left"], "right": g["right"], "file": "glyphs/" + name}
+    (out / "font.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    return len(font["glyphs"])
+
+
+def import_font(directory) -> bytes:
+    """Rebuild a ``.zi`` from a directory written by :func:`export_font`."""
+    import json
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError("Pillow is required to read glyph PNGs") from exc
+    out = Path(directory)
+    meta = json.loads((out / "font.json").read_text(encoding="utf-8"))
+    glyphs = {}
+    for hexcode, g in meta["glyphs"].items():
+        img = Image.open(out / g["file"]).convert("L")
+        w, h = img.size
+        pix = list(img.tobytes())
+        glyphs[int(hexcode, 16)] = {
+            "width": g["width"], "left": g["left"], "right": g["right"],
+            "alpha": [pix[y * w:(y + 1) * w] for y in range(h)],
+        }
+    return encode_font(glyphs, meta["height"], meta["name"], meta["layout"], meta["bpp"])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Encode USART HMI .zi fonts without Wine")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1010,7 +1123,30 @@ def main(argv=None) -> int:
     enc.add_argument("--size", type=int)
     enc.add_argument("--font-index", type=int, default=0)
     enc.add_argument("--name")
+    dec = sub.add_parser("decode", help="decode a .zi into font.json + glyph PNGs")
+    dec.add_argument("input")
+    dec.add_argument("directory")
+    rebuild = sub.add_parser("rebuild", help="build a .zi from a directory written by decode")
+    rebuild.add_argument("directory")
+    rebuild.add_argument("output")
     args = parser.parse_args(argv)
+    if args.command == "decode":
+        try:
+            print("%d glyphs" % export_font(Path(args.input).read_bytes(), args.directory))
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        return 0
+    if args.command == "rebuild":
+        output = Path(args.output)
+        if output.exists():
+            parser.error("refusing to overwrite existing output: %s" % output)
+        try:
+            data = import_font(args.directory)
+            with output.open("xb") as f:
+                f.write(data)
+        except (OSError, ValueError, KeyError) as exc:
+            parser.error(str(exc))
+        return 0
     if args.command == "encode":
         output = Path(args.output)
         if output.exists():

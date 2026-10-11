@@ -140,6 +140,28 @@ LOCAL_FONT = next((p for p in FONT_CANDIDATES if os.path.exists(p)), None)
 
 
 @unittest.skipUnless(LOCAL_FONT, "no local TrueType font")
+class DecodeTests(unittest.TestCase):
+    def test_decode_roundtrip_is_pixel_exact(self):
+        # asymmetric bitmap so a transposed or mirrored decode is detected
+        alpha = [[0, 36, 73, 255], [182, 0, 255, 0], [255, 109, 0, 36]]
+        glyphs = {65: {"width": 2, "left": 1, "right": 1, "alpha": alpha}}
+        for layout in ("ascii", "bmp"):
+            data = F.encode_font(glyphs, 3, "Dec", layout, 3)
+            font = F.decode_font(data)
+            self.assertEqual((font["name"], font["height"], font["layout"]), ("Dec", 3, layout))
+            g = font["glyphs"][65]
+            self.assertEqual((g["width"], g["left"], g["right"]), (2, 1, 1))
+            self.assertEqual(g["alpha"], [[round(round(v * 7 / 255) * 255 / 7) for v in r] for r in alpha])
+            again = F.encode_font(font["glyphs"], 3, font["name"], layout, font["bpp"])
+            self.assertEqual(F.decode_font(again)["glyphs"], font["glyphs"])
+
+    def test_decode_one_bit_and_rejects_bad_data(self):
+        data = F.encode_font({66: {"width": 2, "left": 0, "right": 0, "alpha": [0, 255, 255, 0]}}, 2, "One", "ascii", 1)
+        self.assertEqual(F.decode_font(data)["glyphs"][66]["alpha"], [[0, 255], [255, 0]])
+        with self.assertRaises(ValueError):
+            F.decode_font(data[:-1])
+
+
 class RasterisationTests(unittest.TestCase):
     def test_ttf_ascii_space_and_missing_cmap(self):
         data = F.encode_ttf(LOCAL_FONT, height=16, chars=" A", bpp=1)
