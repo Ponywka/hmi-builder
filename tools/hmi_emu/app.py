@@ -68,7 +68,22 @@ class Emulator:
                 "pages": [p.key for p in self.project.pages], "dim": dev.sysvars["dim"], "sleep": dev.sysvars["sleep"],
                 "animating": animating, "links": [l.name for l in self.links],
                 "errors": dev.error_count, "last_error": dev.last_error or "",
+                "col_pics": self._col_pics(dev),
             }
+
+    def _col_pics(self, dev):
+        """What the host wrote into the col_pic components: size of the text and whether it decodes."""
+        from . import colpic
+        out = []
+        for (page, name), data in dev.written.items():
+            try:
+                width, height, _ = colpic.decode(data)
+                status = "%dx%d" % (width, height)
+            except ValueError as exc:
+                status = str(exc)
+            out.append({"page": self.project.pages[page].key, "name": name, "bytes": len(data), "decoded": status,
+                        "head": data[:48].decode("latin-1")})
+        return out
 
     def variables(self):
         dev = self.device
